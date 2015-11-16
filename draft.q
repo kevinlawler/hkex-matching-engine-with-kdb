@@ -15,10 +15,11 @@ input
 
 / 2. Create bid, ask, trade, rejected book 
 book:([]id:`int$();time:`time$();sym:`$();side:`char$();ordertype:`$();price:`float$();size:`int$())
-bidbook:`sym`price xasc `sym`price xkey book
-askbook:`sym`price asc `sym`price xkey book
+bidbook:`sym`price xasc `sym`price`time xkey book
+askbook:`sym`price xdesc `sym`price`time xkey book
 `bidbook insert(select [10] from input)
 bidbook
+askbook
 `bidbook insert(`GOOG;120.5;123;09:00:00.000;"B";`limit;200)
 tradebook:`id xkey ([]id:`int$();time:`second$();sym:`$();side:`char$();ordertype:`char$();quotedprice:`float$();executedprice:`float$();size:`int$())
 
