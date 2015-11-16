@@ -21,11 +21,11 @@ matchBidAndAsk:{[SellOrder] // TODO: Implement Buy Side
 };
  
 executeLimitOrderTrade:{[SellOrder; BuyOrderID] 
-    /tempOrder: SellOrder
-    /$[BuyOrder[`size] < SellOrder[`size]; [updateTradeTable[SellOrder; BuyOrder]; updateBidTable[SellOrder;BuyOrder]; 
-    /matchBidAndAsk[tempOrder[`size]: tempOrder[`size]-tempOrder[`size]]]
-    updateTradeTable[SellOrder; BuyOrderID]; 
-    updateBidTable[SellOrder;BuyOrderID]
+    tempSellOrder: SellOrder;
+    tempSellOrder[`size]: tempSellOrder[`size]-bid_table[BuyOrderID;`size];
+    $[bid_table[BuyOrderID;`size] < SellOrder[`size]; [updateTradeTable[SellOrder; BuyOrderID]; 
+    updateBidTable[SellOrder;BuyOrderID]; matchBidAndAsk[tempSellOrder]];
+    [updateTradeTable[SellOrder; BuyOrderID]; updateBidTable[SellOrder;BuyOrderID]]]
 };
 
     // if BuySize > SellSize, UPDATE BuySize = BuySize - SellSize, FULL trade on sell side, partial on Buy Side
@@ -33,23 +33,23 @@ executeLimitOrderTrade:{[SellOrder; BuyOrderID]
     // if BuySize = SellSize, delete Buy Order from Bid Table, FULL TRADE EXECUTED on both sides
 updateTradeTable:{[SellOrder;BuyOrderID]
     tradeID: (count trade_table)+1;
-    $[bid_table[BuyOrderID;`size] > SellOrder[`size];
-    `trade_table insert (tradeID; BuyOrderID; SellOrder[`id]; .z.T; SellOrder[`sym]; SellOrder[`price]; SellOrder[`size]);
-    `trade_table insert (tradeID; BuyOrderID; SellOrder[`id]; .z.T; SellOrder[`sym]; SellOrder[`price]; SellOrder[`size]);] /if BuySize < or = SellSize
+    $[bid_table[BuyOrderID;`size] < SellOrder[`size];
+    `trade_table upsert (tradeID; BuyOrderID; SellOrder[`id]; .z.T; SellOrder[`sym]; SellOrder[`price]; bid_table[BuyOrderID;`size]);
+    `trade_table upsert (tradeID; BuyOrderID; SellOrder[`id]; .z.T; SellOrder[`sym]; SellOrder[`price]; SellOrder[`size])] / if BuyOrderSize > or =
 };
 
 updateBidTable:{[SellOrder;BuyOrderID]
-    $[BuyOrder[`size] > SellOrder[`size];
-    bid_table[BuyOrder[`id];`size]: BuyOrder[`size] - SellOrder[`size];
-    delete from `bid_table where id=BuyOrder[`id][0]] /if BuySize < or = SellSize
+    $[bid_table[BuyOrderID;`size] > SellOrder[`size];
+    bid_table[BuyOrderID;`size]: bid_table[BuyOrderID;`size] - SellOrder[`size];
+    delete from `bid_table where id=BuyOrderID] /if BuySize < or = SellSize
 };
  
 / SAMPLE DATA - assume latests order inserted at the end
-`bid_table insert (1;09:04:59:000;`AAPL;10.20;1);
-`bid_table insert (2;09:06:59:000;`AAPL;10.00;1);
-`bid_table insert (3;09:07:59:000;`AAPL;10.10;1);
-`bid_table insert (4;09:09:59:000;`AAPL;10.00;1);
-`bid_table insert (5;09:10:59:000;`AAPL;09.80;1);
-`bid_table insert (6;09:05:59:000;`AAPL;10.30;1);
-`bid_table insert (7;09:03:59:000;`AAPL;10.30;1);
-order:`id`time`sym`price`size`side!(10;.z.T;`AAPL;10.40;100;`Sell) 
+`bid_table insert (1;09:04:59:000;`AAPL;10.20;30);
+`bid_table insert (2;09:06:59:000;`AAPL;10.00;40);
+`bid_table insert (3;09:07:59:000;`AAPL;10.10;46);
+`bid_table insert (4;09:09:59:000;`AAPL;10.00;44);
+`bid_table insert (5;09:10:59:000;`AAPL;09.80;89);
+`bid_table insert (6;09:05:59:000;`AAPL;10.30;22);
+`bid_table insert (7;09:03:59:000;`AAPL;10.30;66);
+order:`id`time`sym`price`size`side!(10;.z.T;`AAPL;10.30;90;`Sell) 
