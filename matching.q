@@ -7,11 +7,11 @@
 s:(),`FDP,`HSBC,`GOOG,`APPL,`REYA;
 px:(),5,80,780,120,45;
 st:09:00:00.000;
-ot:`limit`auction;
+ot:`limit; /`auction
 / a function to create random trades data
 createData:{[n]dict:s!px;orderID:n?1000000000;sym:n?s;side:n?`bid`offer;
-            orderType:n?ot;price:((+;-)side=`bid) .'flip(dict sym;.050*n?1+til 10);
-            sample:flip`orderID`time`sym`side`orderType`price`quantity! (orderID;st+n?25200000;sym;side;orderType;price;100*n?1+til 10)};
+            orderType:ot;price:((+;-)side=`bid) .'flip(dict sym;.050*n?1+til 10);
+            sample:flip`orderID`time`sym`side`orderType`price`quantity! (orderID;st+n?25200000;sym;side;orderType;price;100*n?1+til 10)}; /orderType:n?ot
 input:`time xasc createData 10000; input
 
 / save `$"/Users/Emanuel/Desktop/input.csv"
@@ -19,22 +19,22 @@ input:`time xasc createData 10000; input
 
 / 2. Create bid, ask, trade, rejected book 
 book:([]orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$());
-bidbook:`sym`price xasc `orderID xkey book; bidbook
-askbook:`sym`price xdesc `orderID xkey book; askbook
-tradebook:`tradeID xkey ([]tradeID:`int$();orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$()); tradebook
+bidbook:`sym`price xasc `orderID xkey book;
+askbook:`sym`price xdesc `orderID xkey book;
+tradebook:`tradeID xkey ([]tradeID:`int$();orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$()); 
 rejectedbook:([]orderID:`int$();time:`time$());
 
 / for testing with some random data in the order book
 `bidbook insert(select [20] from input where side=`bid); 
-bidbook:`sym xasc `price xdesc `orderID xkey bidbook; bidbook
-`askbook insert(select [20] from input where side=`offer); askbook
-askbook:`sym`price xasc `orderID xkey askbook; askbook
+bidbook:`sym xasc `price xdesc `orderID xkey bidbook; 
+/`askbook insert(select [20] from input where side=`offer); 
+/askbook:`sym`price xasc `orderID xkey askbook; 
 
 / for testing with a single order
-testorder:`orderID`time`sym`side`orderType`price`quantity!(934256543;09:40:00.000;`GOOG;`ask;`limit;120.5;200); testorder
-MatchOrder[testorder]; 
-select from bidbook where sym=`GOOG
-select from askbook where sym=`GOOG
+testorder:`orderID`time`sym`side`orderType`price`quantity!(234234234;09:40:00.000;`GOOG;`offer;`limit;779.85;200); / offfer = ask
+MatchOrder[testorder] 
+select from bidbook where sym=`GOOG, orderType=`limit
+select from askbook where sym=`GOOG, orderType=`limit
 select from tradebook where sym=`GOOG
 select from rejectedbook
 
@@ -50,6 +50,7 @@ select from rejectedbook
 / Top level function to run with different order types
 / assume the order is in the format of a dictionary
 MatchOrder:{[order]
+                / :1; 
                 $[order[`orderType]=`limit; ExecuteLimitOrder[order];
                     ] / put other order types here
            };
@@ -59,59 +60,77 @@ MatchOrder:{[order]
 / For limit order, reject if invalid, match otherwise
 ExecuteLimitOrder:{[order]
                         $[order[`side]=`bid; 
-                            ExecuteLimitOrderCondition1;
-                            $[order[`side]=`offer; 
-                                ExecuteLimitOrderCondition2; 
+                            [
+                                /:2; 
+                                ExecuteLimitOrderCondition1[order]
+                            ];
+                            $[testorder[`side]=`offer; 
+                                [
+                                    /:3;
+                                    ExecuteLimitOrderCondition2[order] 
+                                ];
                                 `ERROR
                              ]
                          ]
                   };
 
 ExecuteLimitOrderCondition1: {[order] 
+                                /:4;
                                 $[order[`price] > askbook[GetTopOfBookOrderID[order[`sym];`offer];`price];
                                     `rejectedbook insert (order[`orderID]; .z.T); / reject invalid orders
                                     [   / implement the deviation 9 times later
                                         / lock the table
                                         `bidbook insert order; / insert into the table 
-                                        MatchLimitOrder[order[`orderID];GetTopOfBookOrderID[order[`sym];`offer]];
-                                        / unlock the table
+                                        MatchLimitOrder[order[`orderID];GetTopOfBookOrderID[order[`sym];`offer]]
+                                  / :1;        / unlock the table
                                     ]
                                  ]
                              };
-
 ExecuteLimitOrderCondition2: {[order]
-                                $[order[`price] < bidbook[GetTopOfBookOrderID[order[`sym];`bid];`price];
-                                    `rejectedbook insert (order[`orderID]; .z.T); / reject invalid orders
-                                    [
-                                        / implement the deviation 9 times later
+                                
+                                $[order[`price] < bidbook[GetTopOfBookOrderID[testorder[`sym];`bid];`price];
+                                    `rejectedbook insert (order[`orderID]; .z.T); 
+                                    [   / implement the deviation 9 times later
                                         / lock the table
-                                        `askbook insert order; / insert into the table 
-                                        MatchLimitOrder[order[`orderID];GetTopOfBookOrderID[order[`sym];`bid]];
-                                        / unlock the table
+                                        `askbook insert order; 
+                                        MatchLimitOrder[GetTopOfBookOrderID[order[`sym];`bid];order[`orderID]]
+                                        / :1;        / unlock the table 
                                     ]
                                  ]
-                             };
+                             }
 
-
+MatchOrder[testorder]
+MatchLimitOrder[135433642i;234234234i]
 / Matching bid and ask limit order
 
 MatchLimitOrder:{[bidbookID;askbookID]
+                   /:7;
                    $[bidbook[bidbookID;`price]=askbook[askbookID;`price];                        
                         $[askbook[askbookID;`quantity]>bidbook[bidbookID;`quantity];
-                            MatchLimitOrderCondition1[bidbookID;askbookID];
-                        $[askbook[askbookID;`quantity]=bidbook[bidbookID;`quantity];
-                            MatchLimitOrderCondition2[bidbookID;askbookID];
-                        $[askbook[askbookID;`quantity]<bidbook[bidbookID;`quantity];
-                            MatchLimitOrderCondition3[bidbookID;askbookID];
-                            `WRONGSIZE
-                         ]
-                         ]
+                            /[
+                                /:3;
+                                MatchLimitOrderCondition1[bidbookID;askbookID];
+                            /];
+                                $[askbook[askbookID;`quantity]=bidbook[bidbookID;`quantity];
+                                    /[
+                                        /askbookID;
+                                        MatchLimitOrderCondition2[bidbookID;askbookID];
+                                    /];
+                                        $[askbook[askbookID;`quantity]<bidbook[bidbookID;`quantity];
+                                           / [
+                                                /:5;
+                                                MatchLimitOrderCondition3[bidbookID;askbookID];
+                                            /];
+                                            `WRONGSIZE
+                                         ]
+                                 ]
                          ]; `PRICEUNMATCHED
                          / Price does not match; leave;
                      ]
                  };
 
 MatchLimitOrderCondition1: {[bidbookID;askbookID]
+                                           :12;
                                         askbook[askbookID;`quantity]:askbook[askbookID;`quantity]-bidbook[bidbookID;`quantity];
                                         delete from `bidbook where orderID=bidbookID;
                                         tradeTime:.z.T;
@@ -121,6 +140,7 @@ MatchLimitOrderCondition1: {[bidbookID;askbookID]
                                    };
 
 MatchLimitOrderCondition2: {[bidbookID;askbookID]
+                                    :11;
                                     delete from `askbook where orderID=askbookID;
                                     delete from `bidbook where orderID=bidbookID;
                                     tradeTime:.z.T;         
@@ -129,6 +149,7 @@ MatchLimitOrderCondition2: {[bidbookID;askbookID]
                               };
 
 MatchLimitOrderCondition3: {[bidbookID;askbookID]
+                                    /:10;
                                         delete from `askbook where orderID=askbookID;
                                         bidbook[bidbookID;`quantity]:bidbook[bidbookID;`quantity]-askbook[askbookID;`quantity];                                
                                         tradeTime:.z.T;
