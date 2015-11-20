@@ -109,7 +109,7 @@ MatchLimitOrder:{[bidbookID;askbookID]
                         $[askbook[askbookID;`quantity]>bidbook[bidbookID;`quantity];
                             /[
                                 /:3;
-                                MatchLimitOrderCondition1[bidbookID;askbookID];
+                                MatchLimitOrderCondition1[bidbookID;askbookID
                             /];
                                 $[askbook[askbookID;`quantity]=bidbook[bidbookID;`quantity];
                                     /[
