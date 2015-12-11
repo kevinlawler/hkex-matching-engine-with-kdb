@@ -17,12 +17,12 @@ CreateData:{[n]dict:s!px;orderID:n?1000000000;sym:n?s;side:n?`bid`offer;
             sample:flip`orderID`time`sym`side`orderType`price`quantity! (orderID;st+n?25200000;sym;side;orderType;price;100*n?1+til 10)}; /orderType:n?ot
 
 
-/ 2. Create bid, ask, trade, rejected book 
+/ 2. Create bid, ask, trade, rejected book
 
 book:([]orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$());
 bidbook:`sym`price xasc `orderID xkey book;
 askbook:`sym`price xdesc `orderID xkey book;
-tradebook:`tradeID xkey ([]tradeID:`int$();orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$()); 
+tradebook:`tradeID xkey ([]tradeID:`int$();orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$());
 rejectedbook:([]orderID:`int$();time:`time$());
 
 
@@ -30,7 +30,7 @@ rejectedbook:([]orderID:`int$();time:`time$());
 
 
 
-/ 4. Validating the input format 
+/ 4. Validating the input format
 / check the time, if it is the latest, etc.
 
 
@@ -40,61 +40,61 @@ rejectedbook:([]orderID:`int$();time:`time$());
 / MatchOrder: Top level function to match market order with different types
 / assume the order is in the format of a dictionary
 MatchOrder: {[order]
-    $[order[`orderType]=`limit; 
+    $[order[`orderType]=`limit;
         ExecuteLimitOrder[order];
-        `WrongOrderType] / add more order Types 
-};
+        `WrongOrderType] / add more order Types
+      };
 
-/ ExecuteLimitOrder: Check if the order is valid, reject if not, otherwise call MatchLimitOrder to do the matching                
+/ ExecuteLimitOrder: Check if the order is valid, reject if not, otherwise call MatchLimitOrder to do the matching
 ExecuteLimitOrder: {[order]
-    $[order[`side]=`bid; 
-        ExecuteLimitOrderCondition1[order]; 
-      order[`side]=`offer; 
-        ExecuteLimitOrderCondition2[order]; 
+    $[order[`side]=`bid;
+        ExecuteLimitOrderCondition1[order];
+      order[`side]=`offer;
+        ExecuteLimitOrderCondition2[order];
       `WrongOrderSide]
-};
+    };
 
 / Condition where the incoming order is of bid type
-ExecuteLimitOrderCondition1: {[order] 
+ExecuteLimitOrderCondition1: {[order]
     $[order[`price] > askbook[GetTopOfBookOrderID[order[`sym];`offer];`price];
         `rejectedbook insert (order[`orderID]; .z.T); / reject invalid orders
         [   / TODO: implement the deviation 9 times later
             / TODO: lock the table
-            `bidbook insert order; / insert into the table 
+            `bidbook insert order; / insert into the table
             MatchLimitOrder[order[`orderID];GetTopOfBookOrderID[order[`sym];`offer];order[`side]]
             / TODO: unlock the table
         ]
      ]
-};
- 
-/ Condition where the incoming order is of ask type                            
-ExecuteLimitOrderCondition2: {[order]                                
+   };
+
+/ Condition where the incoming order is of ask type
+ExecuteLimitOrderCondition2: {[order]
     $[order[`price] < bidbook[GetTopOfBookOrderID[testorder[`sym];`bid];`price];
-        `rejectedbook insert (order[`orderID]; .z.T); 
+        `rejectedbook insert (order[`orderID]; .z.T);
         [   / TODO: implement the deviation 9 times later
             / TODO: lock the table
-            `askbook insert order; 
+            `askbook insert order;
             MatchLimitOrder[GetTopOfBookOrderID[order[`sym];`bid];order[`orderID];order[`side]]
-            / TODO: unlock the table 
+            / TODO: unlock the table
         ]
      ]
-};
+   };
 
 
-/ MatchLimitOrder: The actual matching function between the bid and ask order 
+/ MatchLimitOrder: The actual matching function between the bid and ask order
 MatchLimitOrder:{[bidbookID;askbookID;orderSide]
-    if[bidbook[bidbookID;`price]=askbook[askbookID;`price];             
-        $[askbook[askbookID;`quantity]>bidbook[bidbookID;`quantity]; 
-            MatchLimitOrderCondition1[bidbookID;askbookID;orderSide]; 
+    if[bidbook[bidbookID;`price]=askbook[askbookID;`price];
+        $[askbook[askbookID;`quantity]>bidbook[bidbookID;`quantity];
+            MatchLimitOrderCondition1[bidbookID;askbookID;orderSide];
           askbook[askbookID;`quantity]=bidbook[bidbookID;`quantity];
             MatchLimitOrderCondition2[bidbookID;askbookID;orderSide];
-          askbook[askbookID;`quantity]<bidbook[bidbookID;`quantity]; 
-            MatchLimitOrderCondition3[bidbookID;askbookID;orderSide];                            
+          askbook[askbookID;`quantity]<bidbook[bidbookID;`quantity];
+            MatchLimitOrderCondition3[bidbookID;askbookID;orderSide];
           `WRONGSIZE]
-      ]; 
-};
+      ];
+    };
 
-/ Condition where the ask order quantity is larger than that of buy order 
+/ Condition where the ask order quantity is larger than that of buy order
 MatchLimitOrderCondition1: {[bidbookID;askbookID;orderSide]
     askbook[askbookID;`quantity]:askbook[askbookID;`quantity]-bidbook[bidbookID;`quantity];
     tradeTime:.z.T;
@@ -103,21 +103,21 @@ MatchLimitOrderCondition1: {[bidbookID;askbookID;orderSide]
     delete from `bidbook where orderID=bidbookID;
     if[orderSide=`offer;
         MatchLimitOrder[GetTopOfBookOrderID[askbook[askbookID;`sym];`bid];askbookID;orderSide]
-      ];                                
-};
+      ];
+    };
 
-/ Condition where the ask order quantity is the same as that of buy order 
+/ Condition where the ask order quantity is the same as that of buy order
 MatchLimitOrderCondition2: {[bidbookID;askbookID;orderSide]
-    tradeTime:.z.T;         
+    tradeTime:.z.T;
     `tradebook insert ((1+count tradebook;askbookID;tradeTime),askbook[askbookID;`sym`side`orderType`price`quantity]);
     `tradebook insert ((1+count tradebook;bidbookID;tradeTime),bidbook[bidbookID;`sym`side`orderType`price`quantity]);
     delete from `askbook where orderID=askbookID;
     delete from `bidbook where orderID=bidbookID;
-};
-                           
-/ Condition where the ask order quantity is smaller than that of buy order 
+  };
+
+/ Condition where the ask order quantity is smaller than that of buy order
 MatchLimitOrderCondition3: {[bidbookID;askbookID;orderSide]
-    bidbook[bidbookID;`quantity]:bidbook[bidbookID;`quantity]-askbook[askbookID;`quantity];                                
+    bidbook[bidbookID;`quantity]:bidbook[bidbookID;`quantity]-askbook[askbookID;`quantity];
     tradeTime:.z.T;
     `tradebook insert ((1+count tradebook;askbookID;tradeTime),askbook[askbookID;`sym`side`orderType`price`quantity]);
     `tradebook insert ((1+count tradebook;bidbookID;tradeTime),bidbook[bidbookID;`sym`side`orderType`price],askbook[askbookID;`quantity]);
@@ -125,28 +125,28 @@ MatchLimitOrderCondition3: {[bidbookID;askbookID;orderSide]
     if[orderSide=`bid;
         MatchLimitOrder[bidbookID;GetTopOfBookOrderID[bidbook[bidbookID;`sym];`offer];orderSide]
       ];
-};
-                            
+    };
 
-/ GetTopOfBookOrderID: Return the top price of either the bid/ask book 
+
+/ GetTopOfBookOrderID: Return the top price of either the bid/ask book
 GetTopOfBookOrderID: {[symbol;side]
-     $[side=`bid; 
+     $[side=`bid;
          output: exec orderID[0] from bidbook where sym=symbol, price=max price, time=min time;
-       side=`offer; 
+       side=`offer;
          output: exec orderID[0] from askbook where sym=symbol, price=min price, time=min time;
        output: -1];
      output
-};
-               
+   };
+
 
 / ************* 6. TEST CASES *************
 
-/ Prepare data for testing 
+/ Prepare data for testing
 input:`time xasc CreateData 10000;
-`bidbook upsert(select [50] from input where side=`bid); 
-bidbook:`sym xasc `price xdesc `orderID xkey bidbook; 
-`askbook upsert(select [50] from input where side=`offer); 
-askbook:`sym`price xasc `orderID xkey askbook; 
+`bidbook upsert(select [50] from input where side=`bid);
+bidbook:`sym xasc `price xdesc `orderID xkey bidbook;
+`askbook upsert(select [50] from input where side=`offer);
+askbook:`sym`price xasc `orderID xkey askbook;
 
 / Test case 1: Incoming order:: buy limit order, price: > top of askbook
 testorder:`orderID`time`sym`side`orderType`price`quantity!(111111111;09:40:00.000;`GOOG;`bid;`limit;askbook[GetTopOfBookOrderID[`GOOG;`offer]][`price]+1;123); / offfer = ask
@@ -196,7 +196,7 @@ select from tradebook where sym=`GOOG
 testorder:`orderID`time`sym`side`orderType`price`quantity!(666666666;09:40:00.000;`GOOG;`bid;`limit;askbook[GetTopOfBookOrderID[`GOOG;`offer]][`price];askbook[GetTopOfBookOrderID[`GOOG;`offer]][`quantity]+1); / offfer = ask
 MatchOrder[testorder];
 / Expected Result: the incoming order get partially executed (left with a size of 1) and the top of the askbook order gets fully executed
-select from bidbook where sym=`GOOG, orderType=`limit 
+select from bidbook where sym=`GOOG, orderType=`limit
 select from askbook where sym=`GOOG, orderType=`limit
 select from tradebook where sym=`GOOG
 
@@ -204,13 +204,13 @@ select from tradebook where sym=`GOOG
 book:([]orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$());
 bidbook:`sym`price xasc `orderID xkey book;
 askbook:`sym`price xdesc `orderID xkey book;
-tradebook:`tradeID xkey ([]tradeID:`int$();orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$()); 
+tradebook:`tradeID xkey ([]tradeID:`int$();orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$());
 rejectedbook:([]orderID:`int$();time:`time$());
 input:`time xasc CreateData 10000; input
-`bidbook upsert(select [50] from input where side=`bid); 
-bidbook:`sym xasc `price xdesc `orderID xkey bidbook; 
-`askbook upsert(select [50] from input where side=`offer); 
-askbook:`sym`price xasc `orderID xkey askbook; 
+`bidbook upsert(select [50] from input where side=`bid);
+bidbook:`sym xasc `price xdesc `orderID xkey bidbook;
+`askbook upsert(select [50] from input where side=`offer);
+askbook:`sym`price xasc `orderID xkey askbook;
 
 / Test case 7: Incoming order:: ask limit order, price: < top of bidbook
 testorder:`orderID`time`sym`side`orderType`price`quantity!(111111111;09:40:00.000;`GOOG;`offer;`limit;bidbook[GetTopOfBookOrderID[`GOOG;`bid]][`price]-1;123); / offfer = ask
@@ -260,7 +260,7 @@ select from tradebook where sym=`GOOG
 testorder:`orderID`time`sym`side`orderType`price`quantity!(666666666;09:40:00.000;`GOOG;`offer;`limit;bidbook[GetTopOfBookOrderID[`GOOG;`bid]][`price];bidbook[GetTopOfBookOrderID[`GOOG;`bid]][`quantity]+1); / offfer = ask
 MatchOrder[testorder];
 / Expected Result: the incoming order get partially executed (left with a size of 1) and the top of the bidbook order gets fully executed
-select from bidbook where sym=`GOOG, orderType=`limit 
+select from bidbook where sym=`GOOG, orderType=`limit
 select from askbook where sym=`GOOG, orderType=`limit
 select from tradebook where sym=`GOOG
 
@@ -268,14 +268,13 @@ select from tradebook where sym=`GOOG
 book:([]orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$());
 bidbook:`sym`price xasc `orderID xkey book;
 askbook:`sym`price xdesc `orderID xkey book;
-tradebook:`tradeID xkey ([]tradeID:`int$();orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$()); 
+tradebook:`tradeID xkey ([]tradeID:`int$();orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$());
 rejectedbook:([]orderID:`int$();time:`time$());
 input:`time xasc CreateData 10000; input
-`bidbook upsert(select [50] from input where side=`bid); 
-bidbook:`sym xasc `price xdesc `orderID xkey bidbook; 
-`askbook upsert(select [50] from input where side=`offer); 
-askbook:`sym`price xasc `orderID xkey askbook; 
+`bidbook upsert(select [50] from input where side=`bid);
+bidbook:`sym xasc `price xdesc `orderID xkey bidbook;
+`askbook upsert(select [50] from input where side=`offer);
+askbook:`sym`price xasc `orderID xkey askbook;
 
 
 / 7. Export data
-
