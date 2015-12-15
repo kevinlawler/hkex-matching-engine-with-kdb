@@ -1,6 +1,6 @@
 / Matching Engine for HKEx
 / Limit Order
-/ Nov 23, 2015
+/ Dec 15, 2015
 / Created by: Raymond Sak, Damian Dutkiewicz
 
 
@@ -28,6 +28,107 @@ rejectedbook:([]orderID:`int$();time:`time$());
 
 / 3. Handle incoming feed (delta feedhandlers or something similar)
 
+/ Open the port
+\p 5000;
+/ Modify .z.pg .z.ps later if needed
+
+/ TODO: Fix parser
+getAllTags:{[msg](!)."S=|"0:msg};
+getTag:{[tag;msg](getAllTags[msg])[tag]};
+
+fixTagToName:`1`6`8`9`10`11`12`13`14`15`17`19`21`29`30`31`32`34`35`37`38`39`49`52`56`151!`Account`AvgPx`BeginString`BodyLength`CheckSum`ClOrdID`Commission`CommType`CumQty`Currency`ExecID`ExecRefID`HandlInst`LastCapacity`LastMkt`LastPx`LastQty`MsgSeqNum`MsgType`OrderID`OrderQty`OrderStatus`SenderCompID`SendingTime`TargetCompID`LeavesQty;
+fixMsgs:read0 `:/Users/Emanuel/Desktop/fixMsgs.txt;
+fixTbl:(uj/){flip fixTagToName[key d]!value enlist each d:getAllTags x} each fixMsgs;
+
+colConv:{[intype;outtype]
+       $[(intype in ("C";"c"))&(outtype in ("C";"c"));eval';
+         (intype in ("C";"c"));upper[outtype]$;
+         (outtype in ("C";"c"));string;
+         upper[outtype]$string
+         ]
+       };
+
+matchToSchema:{[t;schema]
+       c:inter[cols t;cols schema];
+       metsch:exec "C"^first t by c from meta schema;
+       mett:exec "C"^first t by c from meta t;
+       ?[t;();0b;c!{[y;z;x](colConv[y[x];z[x]];x)}[mett;metsch] each c]
+       };
+
+genFixMsgs:{[]
+       //read fix message file
+       fixMsgs:read0 `:/Users/Emanuel/Desktop/fixMsgs.txt;
+       // extract each tag, map to name and convert to table
+       fixTbl:(uj/){flip fixTagToName[key d]!value enlist each d:getAllTags x}
+       each fixMsgs;
+       // cast fixTbl to correct types
+       t:matchToSchema[fixTbl;fixMsgs];
+       // Add the original fix message as a column
+       t:update FixMessage:fixMsgs from t;
+       :t;
+     };
+
+runFIXFeed:{[]
+       t:genFixMsgs[];
+       / tick_handle[“upd”;`fixmsgs;t];
+     };
+
+fixmsgs:([]
+       Account:`$();
+       AvgPx:`float$();
+       ClOrdID:();
+       Commission:`float$();
+       CommType:`$();
+       CumQty:`float$();
+       Currency:`$();
+       ExecID:();
+       ExecRefID:();
+       HandlInst:`$();
+       LastCapacity:`$();
+       LastMkt:`$();
+       LastPx:`float$();
+       LastQty:`int$();
+       LeavesQty:`float$();
+       MsgType:`$();
+       OrderID:();
+       OrderQty:`int$();
+       OrdStatus:`$();
+       OrigClOrdID:();
+       Price:`float$();
+       SecurityID:`$();
+       SenderSubID:`$();
+       SendingTime:`datetime$();
+       Side:`$();
+       Symbol:`$();
+       Text:();
+       TimeInForce:`$();
+       TransactTime:`datetime$();
+       FixMessage:();
+       Time:`datetime$()
+);
+
+order:([OrderID:()]
+       ClOrdID:();
+       OrigClOrdID:();
+       SecurityID:`$();
+       Symbol:`$();
+       Side:`$();
+       OrderQty:`int$();
+       CumQty:`float$();
+       LeavesQty:`float$();
+       AvgPx:`float$();
+       Currency:`$();
+       Commission:`float$();
+       CommType:`$();
+       CommValue:`float$();
+       Account:`$();
+       MsgType:`$();
+       OrdStatus:`$();
+       OrderTime:`datetime$();
+       TransactTime:`datetime$();
+       AmendTime:`datetime$();
+       TimeInForce:`$()
+);
 
 
 / 4. Validating the input format
