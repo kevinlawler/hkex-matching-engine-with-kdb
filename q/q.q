@@ -1,0 +1,1 @@
+-1"Welcome to kdb+ 32bit edition\nFor support please see http://groups.google.com/d/forum/personal-kdbplus\nTutorials can be found at http://code.kx.com/wiki/Tutorials\nTo exit, type \\\\\nTo remove this startup msg, edit q.q";
