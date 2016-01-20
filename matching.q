@@ -51,8 +51,8 @@ processMessage:{[message]
 
 / 4. Validating the input format
 / check the time, if it is the latest, etc.
-
-
+/ minimum table spread https://www.hkex.com.hk/eng/rulesreg/traderules/sehk/Documents/sch-2_eng.pdf
+/ call getminimumspread
 
 / 5. Create matching function (using the sample data now)
 
@@ -185,7 +185,6 @@ GetTopOfBookOrderID: {[symbol;side]
 /                    -> not traded yet on the same day  -> currentbid > previousclose -> currentbid
 /                                                       -> currentask < previousclose -> currentask
 /                                                       -> else                       -> previousclose
-
 GetNominalPrice: {[symbol]
   / assume previous close equal to last recorded price,
   / might change later if the system has difficulty in handling too much order near the close
@@ -204,12 +203,39 @@ GetNominalPrice: {[symbol]
   / Assume it has the last trade in the same day now
 
   $[currentBid>lastPrice;
-      output:currentbid;
+      output:currentBid;
     currentAsk<lastPrice;
       output:currentAsk;
     output:lastPrice
   ];
   output
+ };
+
+/ Check if we need to change the .00001 design later
+GetMinimumSpread: {[price]
+  $[price within(0.01,0.25);
+      output:0.001;
+    price within(0.2500001,0.50);
+      output:0.005;
+    price within(0.5000001,10.00);
+      output:0.010;
+    price within(10.0000001,20.00);
+      output:0.020;
+    price within(20.0000001,100.00);
+      output:0.050;
+    price within(100.0000001,200.00);
+      output:0.100;
+    price within(200.0000001,500.00);
+      output:0.200;
+    price within(500.0000001,1000.00);
+      output:0.500;
+    price within(1000.0000001,2000.00);
+      output:1.000;
+    price within(2000.0000001,5000.00);
+      output:2.000;
+    price within(5000.0000001,9995.00);
+      output:5.000;
+  ]
  };
 
 
