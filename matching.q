@@ -58,6 +58,68 @@ processMessage:{[message]
 
 / MatchOrder: Top level function to match market order with different types
 / assume the order is in the format of a dictionary
+
+MatchOrder: {[order]
+    $[order[`side]=`bid;
+      BidOrderCheckCondition[order];
+    order[`side]=`offer;
+      AskOrderCheckCondition[order];
+    `WrongOrderSide]
+  };
+
+
+/ BidOrderCheckCondition: Incoming order is the bid order, check which condition it applies
+BidOrderCheckCondition: {[order]
+    orderPrice: order[`price];
+    askbookTopPrice: askbook[GetTopOfBookOrderID[order[`sym];`offer];`price];
+    askbookTopPrice10spread: askbookTopPrice+9*GetMinimumSpread[order[`price]];
+    nominalPriceDeviate9times: GetNominalPrice[order[`sym]]*9;
+
+
+    $[orderPrice < askbookTopPrice;
+        / condition 1:
+        BidOrderCondition1[order];
+      orderPrice = askbookTopPrice;
+        / condition 2:
+        BidOrderCondition2[order];
+      ((orderPrice within(askbookTopPrice,askbookTopPrice10spread)) and (not orderPrice = askbookTopPrice));
+        / condition 3:
+        BidOrderCondition3[order];
+      ((orderPrice within (askbookTopPrice10spread, nominalPriceDeviate9times)) and (not orderPrice = askbookTopPrice10spread));
+        / condition 4:
+        BidOrderCondition4[order];
+      orderPrice > nominalPriceDeviate9times;
+        / condition 5:
+        BidOrderCondition5[order];
+      ]
+  };
+
+/ AskOrderCheckCondition: Incoming order is the ask order, check which condition it applies
+
+AskOrderCheckCondition: {[order]
+    orderPrice: order[`price];
+    bidbookTopPrice: bidbook[GetTopOfBookOrderID[order[`sym];`bid];`price];
+    bidbookTopPrice10spread: bidbookTopPrice-9*GetMinimumSpread[order[`price]];
+    nominalPriceDeviate9times: GetNominalPrice[order[`sym]]%9;
+
+    $[orderPrice > bidbookTopPrice;
+        / condition 1:
+        AskOrderCondition1[order];
+      orderPrice = bidbookTopPrice;
+        / condition 2:
+        AskOrderCondition2[order];
+      ((orderPrice within(bidbookTopPrice10spread,bidbookTopPrice)) and (not orderPrice = bidbookTopPrice));
+        / condition 3:
+        AskOrderCondition3[order];
+      ((orderPrice within (nominalPriceDeviate9times, bidbookTopPrice10spread)) and (not orderPrice = bidbookTopPrice10spread));
+        / condition 4:
+        AskOrderCondition4[order];
+      orderPrice < nominalPriceDeviate9times;
+        / condition 5:
+        AskOrderCondition5[order];
+      ]
+  };
+/
 MatchOrder: {[order]
     $[order[`orderType]=`limit;
         ExecuteLimitOrder[order];
@@ -75,7 +137,7 @@ ExecuteLimitOrder: {[order]
 
 / Condition where the incoming order is of bid type
 ExecuteLimitOrderCondition1: {[order]
-    $[order[`price] > askbook[GetTopOfBookOrderID[testorder[`sym];`offer];`price];
+    $[order[`price] > askbook[GetTopOfBookOrderID[order[`sym];`offer];`price];
         `rejectedbook insert (order[`orderID]; .z.T); / reject invalid orders
         [   / TODO: implement the deviation 9 times later
             / TODO: lock the table
@@ -89,7 +151,7 @@ ExecuteLimitOrderCondition1: {[order]
 
 / Condition where the incoming order is of ask type
 ExecuteLimitOrderCondition2: {[order]
-    $[order[`price] < bidbook[GetTopOfBookOrderID[testorder[`sym];`bid];`price];
+    $[order[`price] < bidbook[GetTopOfBookOrderID[order[`sym];`bid];`price];
         `rejectedbook insert (order[`orderID]; .z.T);
         [   / TODO: implement the deviation 9 times later
             / TODO: lock the table
@@ -100,6 +162,7 @@ ExecuteLimitOrderCondition2: {[order]
         ]
      ]
  };
+\
 
 / MatchLimitOrder: The actual matching function between the bid and ask order
 MatchLimitOrder:{[bidbookID;askbookID;orderSide]
