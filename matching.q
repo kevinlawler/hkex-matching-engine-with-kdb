@@ -30,19 +30,19 @@ rejectedbook:([]orderID:`int$();time:`time$());
 testMessage: "8=FIX.4.4|9=178|37=00001|52=09:00:00.000|55=APPL|54=1|44=239.5|14=100";
 
 /fixTagToName:`1`6`8`9`10`11`12`13`14`15`17`19`21`29`30`31`32`34`35`37`38`39`49`52`54`56`151!`Account`AvgPx`BeginString`BodyLength`CheckSum`ClOrdID`Commission`CommType`CumQty`Currency`ExecID`ExecRefID`HandlInst`LastCapacity`LastMkt`LastPx`LastQty`MsgSeqNum`MsgType`OrderID`OrderQty`OrderStatus`SenderCompID`SendingTime`Side`TargetCompID`LeavesQty;
-/fixTbl:(uj/){flip fixTagToName[key d]!value enlist each d:getAllTags x} testMessage;
+/fixTbl:(uj/){flip fixTagToName[key d]!value enlist each d:GetAllTags x} testMessage;
 
-getAllTags:{[msg](!)."S=|"0:msg};
-getTag:{[tag;msg](getAllTags[msg])[tag]};
+GetAllTags:{[msg](!)."S=|"0:msg};
+GetTag:{[tag;msg](GetAllTags[msg])[tag]};
 
-processMessage:{[message]
-    oID: "I"$ getTag[`37;message];
-    oTime: "T"$ getTag[`52;message];
-    oSym: `$ getTag[`55;message];
-    oSide: $[(`$ getTag[`54;message])=`1;`bid;(`$ getTag[`54;message])=`2;`offer;`$ getTag[`54;message]]; // `1 = buy, 2 = sell
+ProcessMessage:{[message]
+    oID: "I"$ GetTag[`37;message];
+    oTime: "T"$ GetTag[`52;message];
+    oSym: `$ GetTag[`55;message];
+    oSide: $[(`$ GetTag[`54;message])=`1;`bid;(`$ GetTag[`54;message])=`2;`offer;`$ GetTag[`54;message]]; // `1 = buy, 2 = sell
     // type: oType
-    oPrice: "F"$ getTag[`44;message]; // not sure if it should be 44 (Price) or 6 (av. price)
-    oQuantity: "I"$ getTag[`14;message];
+    oPrice: "F"$ GetTag[`44;message]; // not sure if it should be 44 (Price) or 6 (av. price)
+    oQuantity: "I"$ GetTag[`14;message];
 
     convertedOrder:`orderID`time`sym`side`orderType`price`quantity!(oID;oTime;oSym;oSide;`limit;oPrice;oQuantity);
     MatchOrder[convertedOrder];
@@ -75,22 +75,21 @@ BidOrderCheckCondition: {[order]
     askbookTopPrice10spread: askbookTopPrice+9*GetMinimumSpread[order[`price]];
     nominalPriceDeviate9times: GetNominalPrice[order[`sym]]*9;
 
-
     $[orderPrice < askbookTopPrice;
         / condition 1:
-        BidOrderCondition1[order];
+        ProcessBidCondition1[order];
       orderPrice = askbookTopPrice;
         / condition 2:
-        BidOrderCondition2[order];
+        ProcessBidCondition2[order];
       ((orderPrice within(askbookTopPrice,askbookTopPrice10spread)) and (not orderPrice = askbookTopPrice));
         / condition 3:
-        BidOrderCondition3[order];
+        ProcessBidCondition3[order];
       ((orderPrice within (askbookTopPrice10spread, nominalPriceDeviate9times)) and (not orderPrice = askbookTopPrice10spread));
         / condition 4:
-        BidOrderCondition4[order];
+        ProcessBidCondition4[order];
       orderPrice > nominalPriceDeviate9times;
         / condition 5:
-        BidOrderCondition5[order];
+        ProcessBidCondition5[order];
       ]
   };
 
@@ -104,21 +103,106 @@ AskOrderCheckCondition: {[order]
 
     $[orderPrice > bidbookTopPrice;
         / condition 1:
-        AskOrderCondition1[order];
+        ProcessAskCondition1[order];
       orderPrice = bidbookTopPrice;
         / condition 2:
-        AskOrderCondition2[order];
+        ProcessAskCondition2[order];
       ((orderPrice within(bidbookTopPrice10spread,bidbookTopPrice)) and (not orderPrice = bidbookTopPrice));
         / condition 3:
-        AskOrderCondition3[order];
+        ProcessAskCondition3[order];
       ((orderPrice within (nominalPriceDeviate9times, bidbookTopPrice10spread)) and (not orderPrice = bidbookTopPrice10spread));
         / condition 4:
-        AskOrderCondition4[order];
+        ProcessAskCondition4[order];
       orderPrice < nominalPriceDeviate9times;
         / condition 5:
-        AskOrderCondition5[order];
+        ProcessAskCondition5[order];
       ]
   };
+
+/ ============================= ASK ORDER CONDITIONS ===========================
+
+ProcessAskCondition1:{[order] / Ask Order Above Top Bid Price
+  $[order[`orderType]=`speciallimit;
+    AddToRejectBook[order];
+  AddToAskBook[order]]; / If limit order OR Enhanced Limit Order
+ };
+
+ProcessAskCondition2:{[order]  / Ask Order = Top Bid Price
+  $[order[`orderType]=`speciallimit;
+      AddToRejectBook[MatchAskOrderAtTopBidPrice[order]];
+    AddToAskBook[MatchAskOrderAtTopBidPrice[order]]]; / if limit order OR enhanced limit order
+ };
+
+ProcessAskCondition3:{[order] / Ask Order < Top Bid Price AND Ask Order > Price @ 9 Spreads away
+  $[order[`orderType]=`limit;
+      AddToRejectBook[order];
+    order[`orderType]=`enhancedlimit;
+      AddToAskBook[MatchAskOrderUpTo9Spreads[order]];
+    AddToRejectBook[MatchAskOrderUpTo9Spreads[order]]]; / if special limit order
+ };
+
+ProcessAskCondition4:{[order] / Ask Order < Price @ 9 Spreads Away AND Ask Order > Price @ 9 deviations away
+  $[order[`orderType]=`speciallimit;
+    AddToRejectBook[MatchAskOrderUpTo9Spreads[order]];
+  AddToRejectBook[order]]; / if limit order OR enhanced limit order
+ };
+
+ProcessAskCondition5:{[order] /  Ask Order < Price @ 9 deviations Away
+  AddToRejectBook[order];     / Reject Order regardless of order type
+ };
+
+/ ============================= BID ORDER CONDITIONS ===========================
+
+ProcessBidCondition1:{[order] / Bid Order Below Top Ask Price
+  $[order[`orderType]=`speciallimit;
+    AddToRejectBook[order];
+  AddToBidBook[order]]; / If limit order OR Enhanced Limit Order
+ };
+
+ProcessBidCondition2:{[order] / Bid Order = Top Ask Price
+  $[order[`orderType]=`speciallimit;
+      AddToRejectBook[MatchBidOrderAtTopAskPrice[order]];
+    AddToBidBook[MatchBidOrderAtTopAskPrice[order]]]; / if limit order OR enhanced limit order
+ };
+
+ProcessBidCondition3:{[order] / Bid Order > Top Ask Price AND Bid Order < Price @ 9 Spreads Away
+  $[order[`orderType]=`limit[[]];
+      AddToRejectBook[order];
+    order[`orderType]=`enhancedlimit;
+      AddToBidBook[MatchBidOrderUpTo9Spreads[order]];
+    AddToRejectBook[MatchBidOrderUpTo9Spreads[order]]]; / if special limit order
+ };
+
+ProcessBidCondition4:{[order] / Bid Order > Prie @ 9 Spreads Away AND Ask Order < Price @ 9 deviations Away
+  $[order[`orderType]=`speciallimit;
+    AddToRejectBook[MatchBidOrderUpTo9Spreads[order]];
+  AddToRejectBook[order]]; / if limit order OR enhanced limit order
+ };
+
+ProcessBidCondition5:{[order] / Bid Order > Price @ 9 deviations Away
+  AddToRejectBook[order];
+ };
+
+
+MatchAskOrderAtTopBidPrice: {[order]}; / The function has to return updated order with unmatched number of underlying
+MatchBidOrderAtTopAskPrice: {[order]}; / The function has to return updated order with unmatched number of underlying
+MatchAskOrderUpTo9Spreads: {[order]}; / The function has to return updated order with unmatched number of underlying
+MatchBidOrderUpTo9Spreads: {[order]}; / The function has to return updated order with unmatched number of underlying
+
+AddToAskBook: {[order]
+  `askbook insert order;
+  `sym`price`time xasc `askbook; /sort the table
+ };
+
+AddToBidBook: {[order]
+  `bidbook insert order;
+  `sym xasc `price xdesc `time xasc `bidbook; / sort the table
+ };
+
+AddToRejectBook: {[order]
+  `rejectedbook insert (order[`orderID]; .z.T);
+ };
+
 /
 MatchOrder: {[order]
     $[order[`orderType]=`limit;
