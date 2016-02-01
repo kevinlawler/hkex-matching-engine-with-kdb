@@ -183,11 +183,47 @@ ProcessBidCondition5:{[order] / Bid Order > Price @ 9 deviations Away
   AddToRejectBook[order];
  };
 
+MatchAskOrderAtTopBidPrice: {[order] / The function has to return updated order with unmatched number of underlying
 
-MatchAskOrderAtTopBidPrice: {[order]}; / The function has to return updated order with unmatched number of underlying
+  topBidOrderID: GetTopOfBookOrderID[order[`sym];`bid];
+  topBidOrder: GetTopOfBookOrder[order[`sym];`bid]; / fetches the whole order dictionary
+  / base conditions
+  if[order[`price]<>topBidOrder[`price]; order];
+  if[order[`quantity]=0; null];
+
+  tradeQuantity: min[order[`quantity],topBidOrder[`quantity]];
+  AddToTradeBook[order;topBidOrder;tradeQuantity];
+  $[topBidOrder[`quantity]=tradeQuantity; // bid order quantity < OR = ask order quantity
+    delete from `bidbook where orderID=topBidOrderID; // If true, delete from bidBook
+    bidbook[topBidOrderID;`quantity]: topBidOrder[`quantity] - tradeQuantity]; // If false, update quantity
+  order[`quantity]: order[`quantity] - tradeQuantity;
+  :MatchAskOrderAtTopBidPrice[order];
+
+
+ };
+
+/ MatchLimitOrderCondition1: {[bidbookID;askbookID;orderSide]
+/   askbook[askbookID;`quantity]:askbook[askbookID;`quantity]-bidbook[bidbookID;`quantity];
+/   tradeTime:.z.T;
+/   `tradebook insert ((1+count tradebook;askbookID;tradeTime),askbook[askbookID;`sym`side`orderType`price],bidbook[bidbookID;`quantity]);
+/   `sym xasc `time xdesc `tradebook;
+/   `tradebook insert ((1+count tradebook;bidbookID;tradeTime),bidbook[bidbookID;`sym`side`orderType`price`quantity]);
+/   `sym xasc `time xdesc `tradebook;
+/   delete from `bidbook where orderID=bidbookID;
+/   MatchLimitOrder[GetTopOfBookOrderID[askbook[askbookID;`sym];`bid];askbookID;orderSide]
+/ };
+
+
 MatchBidOrderAtTopAskPrice: {[order]}; / The function has to return updated order with unmatched number of underlying
 MatchAskOrderUpTo9Spreads: {[order]}; / The function has to return updated order with unmatched number of underlying
 MatchBidOrderUpTo9Spreads: {[order]}; / The function has to return updated order with unmatched number of underlying
+
+AddToTradeBook: {[askOrder;bidOrder;quantity]
+  tradeTime:.z.T; tradeID: 1+count tradebook;
+  `tradebook insert ((tradeID;askOrder[`orderID];tradeTime),askOrder[`sym`side`orderType`price],quantity);
+  `tradebook insert ((tradeID+1;bidOrder[`orderID];tradeTime),bidOrder[`sym`side`orderType`price],quantity);
+  `sym xasc `time xdesc `tradebook;
+ };
 
 AddToAskBook: {[order]
   `askbook insert order;
@@ -300,6 +336,14 @@ MatchLimitOrderCondition3: {[bidbookID;askbookID;orderSide]
       ];
  };
 
+GetTopOfBookOrder: {[symbol;side]
+    $[side=`bid;
+      output: (first key bidbook)+(first bidbook);
+    side=`offer;
+      output: (first key askbook)+(first askbook);
+    output: -1];
+   output
+  };
 
 / GetTopOfBookOrderID: Return the order id of the top of either the bid/ask book
 GetTopOfBookOrderID: {[symbol;side]
