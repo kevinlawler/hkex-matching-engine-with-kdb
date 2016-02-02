@@ -18,11 +18,11 @@ CreateData:{[n]
   }; /orderType:n?ot
 
 / 2. Create bid, ask, trade, rejected book
-
 book:([]orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$());
 bidbook:`sym xasc `price xdesc `time xasc `orderID xkey book;
 askbook:`sym`price`time xasc `orderID xkey book;
-tradebook:`tradeID xkey ([]tradeID:`int$();orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`float$();quantity:`int$());
+tradebook:`tradeID xkey ([]tradeID:`int$();bidOrderID:`int$();askOrderID:`int$();time:`time$();sym:`$();
+  askOrderType:`$();bidOrderType:`$();tradedPrice:`float$();askOrderPrice:`float$();bidOrderPrice:`float$();quantity:`int$());
 rejectedbook:([]orderID:`int$();time:`time$());
 
 
@@ -166,7 +166,7 @@ ProcessBidCondition2:{[order] / Bid Order = Top Ask Price
  };
 
 ProcessBidCondition3:{[order] / Bid Order > Top Ask Price AND Bid Order < Price @ 9 Spreads Away
-  $[order[`orderType]=`limit[[]];
+  $[order[`orderType]=`limit;
       AddToRejectBook[order];
     order[`orderType]=`enhancedlimit;
       AddToBidBook[MatchBidOrderUpTo9Spreads[order]];
@@ -183,164 +183,100 @@ ProcessBidCondition5:{[order] / Bid Order > Price @ 9 deviations Away
   AddToRejectBook[order];
  };
 
-MatchAskOrderAtTopBidPrice: {[order] / The function has to return updated order with unmatched number of underlying
+MatchAskOrderAtTopBidPrice: {[order]
+ topBidOrderID: GetTopOfBookOrderID[order[`sym];`bid];
+ topBidOrder: GetTopOfBookOrder[order[`sym];`bid]; / fetches the whole order dictionary
 
-  topBidOrderID: GetTopOfBookOrderID[order[`sym];`bid];
-  topBidOrder: GetTopOfBookOrder[order[`sym];`bid]; / fetches the whole order dictionary
-  / base conditions
-  if[order[`price]<>topBidOrder[`price]; order];
-  if[order[`quantity]=0; null];
-
-  tradeQuantity: min[order[`quantity],topBidOrder[`quantity]];
-  AddToTradeBook[order;topBidOrder;tradeQuantity];
-  $[topBidOrder[`quantity]=tradeQuantity; // bid order quantity < OR = ask order quantity
-    delete from `bidbook where orderID=topBidOrderID; // If true, delete from bidBook
-    bidbook[topBidOrderID;`quantity]: topBidOrder[`quantity] - tradeQuantity]; // If false, update quantity
-  order[`quantity]: order[`quantity] - tradeQuantity;
-  :MatchAskOrderAtTopBidPrice[order];
-
-
+ $[(order[`quantity]=0) | (order[`price]<>topBidOrder[`price]); / if  Q = 0 or no more matching orders, return
+    :order;
+    [
+      tradeQuantity: min[order[`quantity],topBidOrder[`quantity]];
+      AddToTradeBook[order;topBidOrder;tradeQuantity,topBidOrder[`price]];
+      $[topBidOrder[`quantity]=tradeQuantity; // bid order quantity < OR = ask order quantity
+        delete from `bidbook where orderID=topBidOrderID; // If true, delete from bidBook
+        bidbook[topBidOrderID;`quantity]: topBidOrder[`quantity] - tradeQuantity]; // If false, update quantity
+      order[`quantity]: order[`quantity] - tradeQuantity;
+      :MatchAskOrderAtTopBidPrice[order];
+     ]
+   ];
  };
 
-/ MatchLimitOrderCondition1: {[bidbookID;askbookID;orderSide]
-/   askbook[askbookID;`quantity]:askbook[askbookID;`quantity]-bidbook[bidbookID;`quantity];
-/   tradeTime:.z.T;
-/   `tradebook insert ((1+count tradebook;askbookID;tradeTime),askbook[askbookID;`sym`side`orderType`price],bidbook[bidbookID;`quantity]);
-/   `sym xasc `time xdesc `tradebook;
-/   `tradebook insert ((1+count tradebook;bidbookID;tradeTime),bidbook[bidbookID;`sym`side`orderType`price`quantity]);
-/   `sym xasc `time xdesc `tradebook;
-/   delete from `bidbook where orderID=bidbookID;
-/   MatchLimitOrder[GetTopOfBookOrderID[askbook[askbookID;`sym];`bid];askbookID;orderSide]
-/ };
+MatchBidOrderAtTopAskPrice: {[order]
+  topAskOrderID: GetTopOfBookOrderID[order[`sym];`offer];
 
+  topAskOrder: GetTopOfBookOrder[order[`sym];`offer]; / fetches the whole order dictionary
+  $[(order[`quantity]=0) | (order[`price]<>topAskOrder[`price]); / if  Q = 0 or no more matching orders, return
+     :order;
+     [
+       tradeQuantity: min[order[`quantity],topAskOrder[`quantity]];
+       AddToTradeBook[topAskOrder;order;tradeQuantity,topAskOrder[`price]];
+       $[topAskOrder[`quantity]=tradeQuantity; // ask order quantity < OR = ask order quantity
+         delete from `askbook where orderID=topAskOrderID; // If true, delete from bidBook
+         askbook[topAskOrderID;`quantity]: topAskOrder[`quantity] - tradeQuantity]; // If false, update quantity
+       order[`quantity]: order[`quantity] - tradeQuantity;
+       :MatchBidOrderAtTopAskPrice[order];
+      ]
+    ];
+ };
 
-MatchBidOrderAtTopAskPrice: {[order]}; / The function has to return updated order with unmatched number of underlying
-MatchAskOrderUpTo9Spreads: {[order]}; / The function has to return updated order with unmatched number of underlying
+MatchAskOrderUpTo9Spreads: {[order]
+ topBidOrderID: GetTopOfBookOrderID[order[`sym];`bid];
+ topBidOrder: GetTopOfBookOrder[order[`sym];`bid]; / fetches the whole order dictionary
+
+ $[(order[`quantity]=0) | (order[`price]>topBidOrder[`price]); / if  Q = 0 or no more matching orders, return
+    :order;
+    [
+      tradeQuantity: min[order[`quantity],topBidOrder[`quantity]];
+      AddToTradeBook[order;topBidOrder;tradeQuantity,topBidOrder[`price]];
+      $[topBidOrder[`quantity]=tradeQuantity; // bid order quantity < OR = ask order quantity
+        delete from `bidbook where orderID=topBidOrderID; // If true, delete from bidBook
+        bidbook[topBidOrderID;`quantity]: topBidOrder[`quantity] - tradeQuantity]; // If false, update quantity
+      order[`quantity]: order[`quantity] - tradeQuantity;
+      :MatchAskOrderUpTo9Spreads[order];
+     ]
+   ];
+ };
+
 MatchBidOrderUpTo9Spreads: {[order]}; / The function has to return updated order with unmatched number of underlying
 
-AddToTradeBook: {[askOrder;bidOrder;quantity]
+AddToTradeBook: {[askOrder;bidOrder;quantity;tradedPrice]
   tradeTime:.z.T; tradeID: 1+count tradebook;
-  `tradebook insert ((tradeID;askOrder[`orderID];tradeTime),askOrder[`sym`side`orderType`price],quantity);
-  `tradebook insert ((tradeID+1;bidOrder[`orderID];tradeTime),bidOrder[`sym`side`orderType`price],quantity);
+  `tradebook insert (tradeID;askOrder[`orderID];bidOrder[`orderID];tradeTime;askOrder[`sym];askOrder[`orderType];bidOrder[`orderType]
+    ;tradedPrice;askOrder[`price];bidOrder[`price];quantity);
   `sym xasc `time xdesc `tradebook;
  };
 
 AddToAskBook: {[order]
-  `askbook insert order;
-  `sym`price`time xasc `askbook; /sort the table
+  if[order[`quantity]<>0;
+    [
+      `askbook insert order;
+      `sym`price`time xasc `askbook; /sort the table
+    ]];
  };
 
 AddToBidBook: {[order]
-  `bidbook insert order;
-  `sym xasc `price xdesc `time xasc `bidbook; / sort the table
+  if[order[`quantity]<>0;
+    [
+      `bidbook insert order;
+      `sym xasc `price xdesc `time xasc `bidbook; / sort the table
+    ]];
  };
 
 AddToRejectBook: {[order]
-  `rejectedbook insert (order[`orderID]; .z.T);
- };
-
-/
-MatchOrder: {[order]
-    $[order[`orderType]=`limit;
-        ExecuteLimitOrder[order];
-        `WrongOrderType] / add more order Types
- };
-
-/ ExecuteLimitOrder: Check if the order is valid, reject if not, otherwise call MatchLimitOrder to do the matching
-ExecuteLimitOrder: {[order]
-    $[order[`side]=`bid;
-        ExecuteLimitOrderCondition1[order];
-      order[`side]=`offer;
-        ExecuteLimitOrderCondition2[order];
-      `WrongOrderSide]
- };
-
-/ Condition where the incoming order is of bid type
-ExecuteLimitOrderCondition1: {[order]
-    $[order[`price] > askbook[GetTopOfBookOrderID[order[`sym];`offer];`price];
-        `rejectedbook insert (order[`orderID]; .z.T); / reject invalid orders
-        [   / TODO: implement the deviation 9 times later
-            / TODO: lock the table
-            `bidbook insert order;
-            `sym xasc `price xdesc `time xasc `bidbook; / sort the table
-            MatchLimitOrder[order[`orderID];GetTopOfBookOrderID[order[`sym];`offer];order[`side]]
-            / TODO: unlock the table
-        ]
-     ]
- };
-
-/ Condition where the incoming order is of ask type
-ExecuteLimitOrderCondition2: {[order]
-    $[order[`price] < bidbook[GetTopOfBookOrderID[order[`sym];`bid];`price];
-        `rejectedbook insert (order[`orderID]; .z.T);
-        [   / TODO: implement the deviation 9 times later
-            / TODO: lock the table
-            `askbook insert testorder;
-            `sym`price`time xasc `askbook; /sort the table
-            MatchLimitOrder[GetTopOfBookOrderID[order[`sym];`bid];order[`orderID];order[`side]]
-            / TODO: unlock the table
-        ]
-     ]
- };
-\
-
-/ MatchLimitOrder: The actual matching function between the bid and ask order
-MatchLimitOrder:{[bidbookID;askbookID;orderSide]
-    if[bidbook[bidbookID;`price]=askbook[askbookID;`price];
-        $[askbook[askbookID;`quantity]>bidbook[bidbookID;`quantity];
-            MatchLimitOrderCondition1[bidbookID;askbookID;orderSide];
-          askbook[askbookID;`quantity]=bidbook[bidbookID;`quantity];
-            MatchLimitOrderCondition2[bidbookID;askbookID;orderSide];
-          askbook[askbookID;`quantity]<bidbook[bidbookID;`quantity];
-            MatchLimitOrderCondition3[bidbookID;askbookID;orderSide];
-          `WRONGSIZE]
-      ];
- };
-
-/ Condition where the ask order quantity is larger than that of buy order
-MatchLimitOrderCondition1: {[bidbookID;askbookID;orderSide]
-    askbook[askbookID;`quantity]:askbook[askbookID;`quantity]-bidbook[bidbookID;`quantity];
-    tradeTime:.z.T;
-    `tradebook insert ((1+count tradebook;askbookID;tradeTime),askbook[askbookID;`sym`side`orderType`price],bidbook[bidbookID;`quantity]);
-    `sym xasc `time xdesc `tradebook;
-    `tradebook insert ((1+count tradebook;bidbookID;tradeTime),bidbook[bidbookID;`sym`side`orderType`price`quantity]);
-    `sym xasc `time xdesc `tradebook;
-    delete from `bidbook where orderID=bidbookID;
-    if[orderSide=`offer;
-        MatchLimitOrder[GetTopOfBookOrderID[askbook[askbookID;`sym];`bid];askbookID;orderSide]
-      ];
- };
-
-/ Condition where the ask order quantity is the same as that of buy order
-MatchLimitOrderCondition2: {[bidbookID;askbookID;orderSide]
-    tradeTime:.z.T;
-    `tradebook insert ((1+count tradebook;askbookID;tradeTime),askbook[askbookID;`sym`side`orderType`price`quantity]);
-    `sym xasc `time xdesc `tradebook;
-    `tradebook insert ((1+count tradebook;bidbookID;tradeTime),bidbook[bidbookID;`sym`side`orderType`price`quantity]);
-    `sym xasc `time xdesc `tradebook;
-    delete from `askbook where orderID=askbookID;
-    delete from `bidbook where orderID=bidbookID;
- };
-
-/ Condition where the ask order quantity is smaller than that of buy order
-MatchLimitOrderCondition3: {[bidbookID;askbookID;orderSide]
-    bidbook[bidbookID;`quantity]:bidbook[bidbookID;`quantity]-askbook[askbookID;`quantity];
-    tradeTime:.z.T;
-    `tradebook insert ((1+count tradebook;askbookID;tradeTime),askbook[askbookID;`sym`side`orderType`price`quantity]);
-    `sym xasc `time xdesc `tradebook;
-    `tradebook insert ((1+count tradebook;bidbookID;tradeTime),bidbook[bidbookID;`sym`side`orderType`price],askbook[askbookID;`quantity]);
-    `sym xasc `time xdesc `tradebook;
-    delete from `askbook where orderID=askbookID;
-    if[orderSide=`bid;
-        MatchLimitOrder[bidbookID;GetTopOfBookOrderID[bidbook[bidbookID;`sym];`offer];orderSide]
-      ];
+  if[order[`quantity]<>0;`rejectedbook insert (order[`orderID]; .z.T)];
  };
 
 GetTopOfBookOrder: {[symbol;side]
     $[side=`bid;
-      output: (first key bidbook)+(first bidbook);
+      [
+        entry: select [1] from bidbook where sym=symbol;
+        output: (first key entry)+(first entry);
+      ];
     side=`offer;
-      output: (first key askbook)+(first askbook);
+      [
+        entry: select [1] from askbook where sym=symbol;
+        output: (first key entry)+(first entry);
+      ];
     output: -1];
    output
   };
@@ -380,7 +316,7 @@ GetNominalPrice: {[symbol]
   / assume previous close equal to last recorded price,
   / might change later if the system has difficulty in handling too much order near the close
 
-  lastPrice: exec price[0] from tradebook where sym=symbol;
+  lastPrice: exec tradedPrice[0] from tradebook where sym=symbol;
   prevClose: lastPrice;
   currentBid: GetTopOfBookPrice[symbol;`bid];
   currentAsk: GetTopOfBookPrice[symbol;`offer];
