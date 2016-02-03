@@ -22,7 +22,7 @@ book:([]orderID:`int$();time:`time$();sym:`$();side:`$();orderType:`$();price:`f
 bidbook:`sym xasc `price xdesc `time xasc `orderID xkey book;
 askbook:`sym`price`time xasc `orderID xkey book;
 tradebook:`tradeID xkey ([]tradeID:`int$();bidOrderID:`int$();askOrderID:`int$();time:`time$();sym:`$();
-  askOrderType:`$();bidOrderType:`$();tradedPrice:`float$();askOrderPrice:`float$();bidOrderPrice:`float$();quantity:`int$());
+  bidOrderType:`$();askOrderType:`$();tradedPrice:`float$();bidOrderPrice:`float$();askOrderPrice:`float$();quantity:`int$());
 rejectedbook:([]orderID:`int$();time:`time$());
 
 
@@ -58,7 +58,6 @@ ProcessMessage:{[message]
 
 / MatchOrder: Top level function to match market order with different types
 / assume the order is in the format of a dictionary
-
 MatchOrder: {[order]
     $[order[`side]=`bid;
       BidOrderCheckCondition[order];
@@ -94,7 +93,6 @@ BidOrderCheckCondition: {[order]
   };
 
 / AskOrderCheckCondition: Incoming order is the ask order, check which condition it applies
-
 AskOrderCheckCondition: {[order]
     orderPrice: order[`price];
     bidbookTopPrice: bidbook[GetTopOfBookOrderID[order[`sym];`bid];`price];
@@ -119,7 +117,39 @@ AskOrderCheckCondition: {[order]
       ]
   };
 
-/ ============================= ASK ORDER CONDITIONS ===========================
+  / ============================= BID ORDER CONDITIONS =========================== /
+
+  ProcessBidCondition1:{[order] / Bid Order Below Top Ask Price
+    $[order[`orderType]=`speciallimit;
+      AddToRejectBook[order];
+    AddToBidBook[order]]; / If limit order OR Enhanced Limit Order
+   };
+
+  ProcessBidCondition2:{[order] / Bid Order = Top Ask Price
+    $[order[`orderType]=`speciallimit;
+        AddToRejectBook[MatchBidOrderAtTopAskPrice[order]];
+      AddToBidBook[MatchBidOrderAtTopAskPrice[order]]]; / if limit order OR enhanced limit order
+   };
+
+  ProcessBidCondition3:{[order] / Bid Order > Top Ask Price AND Bid Order < Price @ 9 Spreads Away
+    $[order[`orderType]=`limit;
+        AddToRejectBook[order];
+      order[`orderType]=`enhancedlimit;
+        AddToBidBook[MatchBidOrderUpTo9Spreads[order]];
+      AddToRejectBook[MatchBidOrderUpTo9Spreads[order]]]; / if special limit order
+   };
+
+  ProcessBidCondition4:{[order] / Bid Order > Prie @ 9 Spreads Away AND Ask Order < Price @ 9 deviations Away
+    $[order[`orderType]=`speciallimit;
+      AddToRejectBook[MatchBidOrderUpTo9Spreads[order]];
+    AddToRejectBook[order]]; / if limit order OR enhanced limit order
+   };
+
+  ProcessBidCondition5:{[order] / Bid Order > Price @ 9 deviations Away
+    AddToRejectBook[order];
+   };
+
+/ ============================= ASK ORDER CONDITIONS =========================== /
 
 ProcessAskCondition1:{[order] / Ask Order Above Top Bid Price
   $[order[`orderType]=`speciallimit;
@@ -151,37 +181,7 @@ ProcessAskCondition5:{[order] /  Ask Order < Price @ 9 deviations Away
   AddToRejectBook[order];     / Reject Order regardless of order type
  };
 
-/ ============================= BID ORDER CONDITIONS ===========================
-
-ProcessBidCondition1:{[order] / Bid Order Below Top Ask Price
-  $[order[`orderType]=`speciallimit;
-    AddToRejectBook[order];
-  AddToBidBook[order]]; / If limit order OR Enhanced Limit Order
- };
-
-ProcessBidCondition2:{[order] / Bid Order = Top Ask Price
-  $[order[`orderType]=`speciallimit;
-      AddToRejectBook[MatchBidOrderAtTopAskPrice[order]];
-    AddToBidBook[MatchBidOrderAtTopAskPrice[order]]]; / if limit order OR enhanced limit order
- };
-
-ProcessBidCondition3:{[order] / Bid Order > Top Ask Price AND Bid Order < Price @ 9 Spreads Away
-  $[order[`orderType]=`limit;
-      AddToRejectBook[order];
-    order[`orderType]=`enhancedlimit;
-      AddToBidBook[MatchBidOrderUpTo9Spreads[order]];
-    AddToRejectBook[MatchBidOrderUpTo9Spreads[order]]]; / if special limit order
- };
-
-ProcessBidCondition4:{[order] / Bid Order > Prie @ 9 Spreads Away AND Ask Order < Price @ 9 deviations Away
-  $[order[`orderType]=`speciallimit;
-    AddToRejectBook[MatchBidOrderUpTo9Spreads[order]];
-  AddToRejectBook[order]]; / if limit order OR enhanced limit order
- };
-
-ProcessBidCondition5:{[order] / Bid Order > Price @ 9 deviations Away
-  AddToRejectBook[order];
- };
+ / ============================= Matching Functions =========================== /
 
 MatchAskOrderAtTopBidPrice: {[order]
  topBidOrderID: GetTopOfBookOrderID[order[`sym];`bid];
@@ -191,7 +191,7 @@ MatchAskOrderAtTopBidPrice: {[order]
     :order;
     [
       tradeQuantity: min[order[`quantity],topBidOrder[`quantity]];
-      AddToTradeBook[order;topBidOrder;tradeQuantity,topBidOrder[`price]];
+      AddToTradeBook[order;topBidOrder;tradeQuantity;topBidOrder[`price]];
       $[topBidOrder[`quantity]=tradeQuantity; // bid order quantity < OR = ask order quantity
         delete from `bidbook where orderID=topBidOrderID; // If true, delete from bidBook
         bidbook[topBidOrderID;`quantity]: topBidOrder[`quantity] - tradeQuantity]; // If false, update quantity
@@ -203,13 +203,14 @@ MatchAskOrderAtTopBidPrice: {[order]
 
 MatchBidOrderAtTopAskPrice: {[order]
   topAskOrderID: GetTopOfBookOrderID[order[`sym];`offer];
-
   topAskOrder: GetTopOfBookOrder[order[`sym];`offer]; / fetches the whole order dictionary
+
   $[(order[`quantity]=0) | (order[`price]<>topAskOrder[`price]); / if  Q = 0 or no more matching orders, return
      :order;
      [
        tradeQuantity: min[order[`quantity],topAskOrder[`quantity]];
-       AddToTradeBook[topAskOrder;order;tradeQuantity,topAskOrder[`price]];
+       AddToTradeBook[topAskOrder;order;tradeQuantity;topAskOrder[`price]];
+       breakhere1;
        $[topAskOrder[`quantity]=tradeQuantity; // ask order quantity < OR = ask order quantity
          delete from `askbook where orderID=topAskOrderID; // If true, delete from bidBook
          askbook[topAskOrderID;`quantity]: topAskOrder[`quantity] - tradeQuantity]; // If false, update quantity
@@ -227,7 +228,7 @@ MatchAskOrderUpTo9Spreads: {[order]
     :order;
     [
       tradeQuantity: min[order[`quantity],topBidOrder[`quantity]];
-      AddToTradeBook[order;topBidOrder;tradeQuantity,topBidOrder[`price]];
+      AddToTradeBook[order;topBidOrder;tradeQuantity;topBidOrder[`price]];
       $[topBidOrder[`quantity]=tradeQuantity; // bid order quantity < OR = ask order quantity
         delete from `bidbook where orderID=topBidOrderID; // If true, delete from bidBook
         bidbook[topBidOrderID;`quantity]: topBidOrder[`quantity] - tradeQuantity]; // If false, update quantity
@@ -239,16 +240,13 @@ MatchAskOrderUpTo9Spreads: {[order]
 
 MatchBidOrderUpTo9Spreads: {[order]}; / The function has to return updated order with unmatched number of underlying
 
-AddToTradeBook: {[askOrder;bidOrder;quantity;tradedPrice]
-  tradeTime:.z.T; tradeID: 1+count tradebook;
-  `tradebook insert (tradeID;askOrder[`orderID];bidOrder[`orderID];tradeTime;askOrder[`sym];askOrder[`orderType];bidOrder[`orderType]
-    ;tradedPrice;askOrder[`price];bidOrder[`price];quantity);
-  `sym xasc `time xdesc `tradebook;
- };
+ / ============================== Books Operations ============================ /
 
 AddToAskBook: {[order]
+  breakhere;
   if[order[`quantity]<>0;
     [
+      order[`orderType]:`limit;
       `askbook insert order;
       `sym`price`time xasc `askbook; /sort the table
     ]];
@@ -257,10 +255,19 @@ AddToAskBook: {[order]
 AddToBidBook: {[order]
   if[order[`quantity]<>0;
     [
+      order[`orderType]:`limit;
       `bidbook insert order;
       `sym xasc `price xdesc `time xasc `bidbook; / sort the table
     ]];
  };
+
+ AddToTradeBook: {[askOrder; bidOrder; quantity; tradedPrice]
+   tradeTime:.z.T;
+   tradeID: 1+count tradebook;
+   `tradebook insert (tradeID;bidOrder[`orderID];askOrder[`orderID];tradeTime;
+     askOrder[`sym];bidOrder[`orderType];askOrder[`orderType];tradedPrice;bidOrder[`price];askOrder[`price];quantity);
+   `sym xasc `time xdesc `tradebook;
+  };
 
 AddToRejectBook: {[order]
   if[order[`quantity]<>0;`rejectedbook insert (order[`orderID]; .z.T)];
@@ -300,6 +307,8 @@ GetTopOfBookOrderID: {[symbol;side]
       output: -1];
      output
   };
+
+  / ======================== Market-related Calculations  ====================== /
 
 / GetNominalPrice: Return the nominal price at the time the function is called
 / Input parameter: symbol: the security symbol

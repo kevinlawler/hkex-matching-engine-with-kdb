@@ -7,17 +7,22 @@
 \l /Users/Raymond/Projects/hkex-matching-engine-with-kdb/matching.q
 \l /Users/Damian/Documents/HKEx-Matching-Engine-with-kdb/matching.q
 
+CleanAndPrepareData[];
 
-/ Prepare data for testing
-bidbook:0#bidbook;
-askbook:0#askbook;
-tradebook:0#tradebook;
-rejectedbook:0#rejectedbook;
-input:`time xasc CreateData 10000;
-`bidbook upsert(select [50] from input where side=`bid);
-`sym xasc `price xdesc `time xasc `orderID xkey `bidbook;
-`askbook upsert(select [50] from input where side=`offer);
-`sym`price`time xasc `orderID xkey `askbook;
+/ Function for cleaning up table and prepare data for testing
+CleanAndPrepareData: {[]
+  delete from `bidbook;
+  delete from `askbook;
+  delete from `tradebook;
+  delete from `rejectedbook;
+  input:`time xasc CreateData 10000;
+  `bidbook upsert(select [50] from input where side=`bid);
+  `sym xasc `price xdesc `time xasc `orderID xkey `bidbook;
+  `askbook upsert(select [50] from input where side=`offer);
+  `sym`price`time xasc `orderID xkey `askbook;
+ }
+
+ / ============================== Limit Bid Order ============================= /
 
 / Test case 1: Incoming order:: buy limit order, price: > top of askbook
 testorder:`orderID`time`sym`side`orderType`price`quantity!(111111111;09:40:00.000;`GOOG;`bid;`limit;askbook[GetTopOfBookOrderID[`GOOG;`offer]][`price]+1;123); / offfer = ask
@@ -73,15 +78,10 @@ select from bidbook where sym=`GOOG, orderType=`limit
 select from askbook where sym=`GOOG, orderType=`limit
 select from tradebook where sym=`GOOG
 
+/ =============================== Limit Ask Order ============================= /
+
 / Clean the books before you execute another test cases
-bidbook:0#bidbook;
-askbook:0#askbook;
-tradebook:0#tradebook;
-rejectedbook:0#rejectedbook;
-`bidbook upsert(select [50] from input where side=`bid);
-bidbook:`sym xasc `price xdesc `time xasc `orderID xkey bidbook;
-`askbook upsert(select [50] from input where side=`offer);
-askbook:`sym`price`time xasc `orderID xkey askbook;
+CleanAndPrepareData[];
 
 / Test case 7: Incoming order:: ask limit order, price: < top of bidbook
 testorder:`orderID`time`sym`side`orderType`price`quantity!(111111111;09:40:00.000;`GOOG;`offer;`limit;bidbook[GetTopOfBookOrderID[`GOOG;`bid]][`price]-1;123); / offfer = ask
@@ -137,16 +137,89 @@ select from bidbook where sym=`GOOG, orderType=`limit
 select from askbook where sym=`GOOG, orderType=`limit
 select from tradebook where sym=`GOOG
 
-/ Clean the books
-bidbook:0#bidbook;
-askbook:0#askbook;
-tradebook:0#tradebook;
-rejectedbook:0#rejectedbook;
-`bidbook upsert(select [50] from input where side=`bid);
-bidbook:`sym xasc `price xdesc `time xasc `orderID xkey bidbook;
-`askbook upsert(select [50] from input where side=`offer);
-askbook:`sym`price`time xasc `orderID xkey askbook;
+/ =============================== Special Limit Bid Order ============================= /
+
+CleanAndPrepareData[];
+
+/ 1.
+
+
+/ =============================== Special Limit Ask Order ============================= /
+
+CleanAndPrepareData[];
+
+/ 1. Test case: condition 1: order price > top bidbook order price
+
+/ 2. Test case: condition 2: order price = top bidbook order price
+
+/ ask order quantity < bidbook top order quantity
+testorder:`orderID`time`sym`side`orderType`price`quantity!
+(222222222;09:40:00.000;`GOOG;`offer;`speciallimit;GetTopOfBookPrice[`GOOG;`bid];bidbook[GetTopOfBookOrderID[`GOOG;`bid]][`quantity]-10);
+MatchOrder[testorder];
+/ Expected Result: order fully executed, bidbook top order quantity has 10 left
+select from bidbook where sym=`GOOG, orderType=`limit
+select from askbook where sym=`GOOG, orderType=`limit
+select from tradebook where sym=`GOOG
+
+/ ask order quantity = bidbook top order quantity
+testorder:`orderID`time`sym`side`orderType`price`quantity!
+(333333333;09:40:00.000;`GOOG;`offer;`speciallimit;GetTopOfBookPrice[`GOOG;`bid];bidbook[GetTopOfBookOrderID[`GOOG;`bid]][`quantity]);
+MatchOrder[testorder];
+/ Expected Result: order and bidbook top order fully executed
+select from bidbook where sym=`GOOG, orderType=`limit
+select from askbook where sym=`GOOG, orderType=`limit
+select from tradebook where sym=`GOOG
+
+/ ask order quantity > bidbook top order quantity
+testorder:`orderID`time`sym`side`orderType`price`quantity!
+(444444444;09:40:00.000;`GOOG;`offer;`speciallimit;GetTopOfBookPrice[`GOOG;`bid];bidbook[GetTopOfBookOrderID[`GOOG;`bid]][`quantity]+10);
+MatchOrder[testorder];
+/ Expected Result: order partially executed, remaining order is rejected, bidbook top order fully executed
+select from bidbook where sym=`GOOG, orderType=`limit
+select from askbook where sym=`GOOG, orderType=`limit
+select from tradebook where sym=`GOOG
+select from rejectedbook
+
+/ 3. Test case: condition 3: 9spread < order price < top bidbook order price
+testorder:`orderID`time`sym`side`orderType`price`quantity!
+(555555555;09:40:00.000;`GOOG;`offer;`speciallimit;GetTopOfBookPrice[`GOOG;`bid]-4;bidbook[GetTopOfBookOrderID[`GOOG;`bid]][`quantity]-10);
+MatchOrder[testorder];
+/ Expected Result: order fully executed, bidbook top order quantity has 10 left
+select from bidbook where sym=`GOOG, orderType=`limit
+select from askbook where sym=`GOOG, orderType=`limit
+select from tradebook where sym=`GOOG
+
+/ ask order quantity = bidbook top order quantity
+testorder:`orderID`time`sym`side`orderType`price`quantity!
+(666666666;09:40:00.000;`GOOG;`offer;`speciallimit;GetTopOfBookPrice[`GOOG;`bid]-4;bidbook[GetTopOfBookOrderID[`GOOG;`bid]][`quantity]);
+MatchOrder[testorder];
+/ Expected Result: order and bidbook top order fully executed
+select from bidbook where sym=`GOOG, orderType=`limit
+select from askbook where sym=`GOOG, orderType=`limit
+select from tradebook where sym=`GOOG
+
+/ ask order quantity > bidbook top order quantity
+testorder:`orderID`time`sym`side`orderType`price`quantity!
+(777777777;09:40:00.000;`GOOG;`offer;`speciallimit;GetTopOfBookPrice[`GOOG;`bid]-4;bidbook[GetTopOfBookOrderID[`GOOG;`bid]][`quantity]+10);
+MatchOrder[testorder];
+/ Expected Result: order fully executed, bidbook top order fully executed, 2nd top order has 10 quantity executed
+select from bidbook where sym=`GOOG, orderType=`limit
+select from askbook where sym=`GOOG, orderType=`limit
+select from tradebook where sym=`GOOG
+
+/ ask order quantity > bidbook top 9 spread orders total quantity
+testorder:`orderID`time`sym`side`orderType`price`quantity!
+(888888888;09:40:00.000;`GOOG;`offer;`speciallimit;GetTopOfBookPrice[`GOOG;`bid]-4;10+(exec sum quantity from bidbook where (sym = `GOOG) and (price > GetTopOfBookPrice[`GOOG;`bid]-4)));
+MatchOrder[testorder];
+/ Expected Result: order partially executed, leaving 10 quantity inserted to reject book, bidbook top order within 10 spreads all get executed
+select from bidbook where sym=`GOOG, orderType=`limit
+select from askbook where sym=`GOOG, orderType=`limit
+select from tradebook where sym=`GOOG
+select from rejectedbook
+
+/ 4. Test case: condition 4: 9 deviation < order price < 9 spread
+
+/ 5. Test case: condition 5: order price < 9 deviation
 
 / Testing for GetNominalPrice
-
 GetNominalPrice[`GOOG]
