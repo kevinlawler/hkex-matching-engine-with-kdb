@@ -183,24 +183,7 @@ ProcessAskCondition5:{[order] /  Ask Order < Price @ 9 deviations Away
 
  / ============================= Matching Functions =========================== /
 
-MatchAskOrderAtTopBidPrice: {[order]
- topBidOrderID: GetTopOfBookOrderID[order[`sym];`bid];
- topBidOrder: GetTopOfBookOrder[order[`sym];`bid]; / fetches the whole order dictionary
-
- $[(order[`quantity]=0) | (order[`price]<>topBidOrder[`price]); / if  Q = 0 or no more matching orders, return
-    :order;
-    [
-      tradeQuantity: min[order[`quantity],topBidOrder[`quantity]];
-      AddToTradeBook[order;topBidOrder;tradeQuantity;topBidOrder[`price]];
-      $[topBidOrder[`quantity]=tradeQuantity; // bid order quantity < OR = ask order quantity
-        delete from `bidbook where orderID=topBidOrderID; // If true, delete from bidBook
-        bidbook[topBidOrderID;`quantity]: topBidOrder[`quantity] - tradeQuantity]; // If false, update quantity
-      order[`quantity]: order[`quantity] - tradeQuantity;
-      :MatchAskOrderAtTopBidPrice[order];
-     ]
-   ];
- };
-
+/ Return: the unfilled order or an order with quantity=0 if fully executed
 MatchBidOrderAtTopAskPrice: {[order]
   topAskOrderID: GetTopOfBookOrderID[order[`sym];`offer];
   topAskOrder: GetTopOfBookOrder[order[`sym];`offer]; / fetches the whole order dictionary
@@ -210,7 +193,6 @@ MatchBidOrderAtTopAskPrice: {[order]
      [
        tradeQuantity: min[order[`quantity],topAskOrder[`quantity]];
        AddToTradeBook[topAskOrder;order;tradeQuantity;topAskOrder[`price]];
-       breakhere1;
        $[topAskOrder[`quantity]=tradeQuantity; // ask order quantity < OR = ask order quantity
          delete from `askbook where orderID=topAskOrderID; // If true, delete from bidBook
          askbook[topAskOrderID;`quantity]: topAskOrder[`quantity] - tradeQuantity]; // If false, update quantity
@@ -219,6 +201,42 @@ MatchBidOrderAtTopAskPrice: {[order]
       ]
     ];
  };
+
+ MatchAskOrderAtTopBidPrice: {[order]
+  topBidOrderID: GetTopOfBookOrderID[order[`sym];`bid];
+  topBidOrder: GetTopOfBookOrder[order[`sym];`bid]; / fetches the whole order dictionary
+
+  $[(order[`quantity]=0) | (order[`price]<>topBidOrder[`price]); / if  Q = 0 or no more matching orders, return
+     :order;
+     [
+       tradeQuantity: min[order[`quantity],topBidOrder[`quantity]];
+       AddToTradeBook[order;topBidOrder;tradeQuantity;topBidOrder[`price]];
+       $[topBidOrder[`quantity]=tradeQuantity; // bid order quantity < OR = ask order quantity
+         delete from `bidbook where orderID=topBidOrderID; // If true, delete from bidBook
+         bidbook[topBidOrderID;`quantity]: topBidOrder[`quantity] - tradeQuantity]; // If false, update quantity
+       order[`quantity]: order[`quantity] - tradeQuantity;
+       :MatchAskOrderAtTopBidPrice[order];
+      ]
+    ];
+  };
+
+ MatchBidOrderUpTo9Spreads: {[order]
+   topAskOrderID: GetTopOfBookOrderID[order[`sym];`offer];
+   topAskOrder: GetTopOfBookOrder[order[`sym];`offer]; / fetches the whole order dictionary
+
+   $[(order[`quantity]=0) | (order[`price]<topAskOrder[`price]); / if  Q = 0 or no more matching orders, return
+      :order;
+      [
+        tradeQuantity: min[order[`quantity],topAskOrder[`quantity]];
+        AddToTradeBook[topAskOrder;order;tradeQuantity;topAskOrder[`price]];
+        $[topAskOrder[`quantity]=tradeQuantity; // bid order quantity < OR = ask order quantity
+          delete from `askbook where orderID=topAskOrderID; // If true, delete from bidBook
+          askbook[topAskOrderID;`quantity]: topAskOrder[`quantity] - tradeQuantity]; // If false, update quantity
+        order[`quantity]: order[`quantity] - tradeQuantity;
+        :MatchBidOrderUpTo9Spreads[order];
+       ]
+     ];
+  };
 
 MatchAskOrderUpTo9Spreads: {[order]
  topBidOrderID: GetTopOfBookOrderID[order[`sym];`bid];
@@ -237,8 +255,6 @@ MatchAskOrderUpTo9Spreads: {[order]
      ]
    ];
  };
-
-MatchBidOrderUpTo9Spreads: {[order]}; / The function has to return updated order with unmatched number of underlying
 
  / ============================== Books Operations ============================ /
 
